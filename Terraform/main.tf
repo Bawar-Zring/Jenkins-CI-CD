@@ -51,7 +51,7 @@ resource "aws_iam_role_policy_attachment" "eks_role_policy_attachment" {
 resource "aws_security_group" "eks-cluster" {
   name        = "eks-cluster-sg"
   description = "Security group for EKS cluster"
-  vpc_id = aws_vpc.main.id
+  vpc_id = data.aws_vpc.ci-cd_vpc.id
 
   ingress {
     from_port   = 0
