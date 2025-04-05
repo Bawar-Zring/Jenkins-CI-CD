@@ -33,13 +33,13 @@ output "subnet_id_private2" {
 }
 
 resource "aws_iam_policy" "eks_policy" {
-  name        = "AmazonEKS_EFS_CSI_Driver_Policy_test"
+  name        = "AmazonEKS_EFS_CSI_Driver_Policy_test_repo"
   description = "IAM policy for EKS EFS CSI driver"
   policy      = file("iam-policy.json")
 }
 
 resource "aws_iam_role" "eks_role" {
-  name               = "AmazonEKS_EFS_CSI_Driver_Role_test"
+  name               = "AmazonEKS_EFS_CSI_Driver_Role_test_repo"
   assume_role_policy = file("trust-policy.json")
 }
 
