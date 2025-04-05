@@ -34,9 +34,9 @@ output "subnet_id_private2" {
 
 # getting iam role from exiting roles named AmazonEKS_EFS_CSI_Driver_Role_test_repo 
 
-data "aws_iam_role" "eks_role" {
-  name = "AmazonEKS_EFS_CSI_Driver_Role_test_repo"
-}
+# data "aws_iam_role" "eks_role" {
+#   name = "AmazonEKS_EFS_CSI_Driver_Role_test_repo"
+# }
 
 
 # resource "aws_iam_policy" "eks_policy" {
@@ -45,10 +45,10 @@ data "aws_iam_role" "eks_role" {
 #   policy      = file("iam-policy.json")
 # }
 
-# resource "aws_iam_role" "eks_role" {
-#   name               = "AmazonEKS_EFS_CSI_Driver_Role_test_repo"
-#   assume_role_policy = file("trust-policy.json")
-# }
+resource "aws_iam_role" "eks_role" {
+  name               = "AmazonEKS_EFS_CSI_Driver_Role_test_repo"
+  assume_role_policy = file("trust-policy.json")
+}
 
 # resource "aws_iam_role_policy_attachment" "eks_role_policy_attachment" {
 #   policy_arn = aws_iam_policy.eks_policy.arn
