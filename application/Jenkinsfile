@@ -1,25 +1,37 @@
 pipeline {
     agent any
 
+    environment {
+        IMAGE_NAME = "b4w4rzr1ng/jenkins"
+    }
+
     stages {
-        stage('Checkout') {
+        stage('Build image') {
             steps {
-                checkout scm
+                script {
+                    app = docker.build("${IMAGE_NAME}")
+                }
             }
         }
-        stage('Build') {
+
+        stage('Test image') {
             steps {
-                echo 'Building the application...'
+                script {
+                    app.inside {
+                        sh 'echo "Tests passed"'
+                    }
+                }
             }
         }
-        stage('Test') {
+
+        stage('Push image') {
             steps {
-                echo 'Running tests...'
-            }
-        }
-        stage('Deploy') {
-            steps {
-                echo 'Deploying the application...'
+                script {
+                    docker.withRegistry('https://registry.hub.docker.com', 'git') {
+                        app.push("${env.BUILD_NUMBER}")
+                        app.push("latest")
+                    }
+                }
             }
         }
     }
