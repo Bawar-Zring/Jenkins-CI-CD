@@ -6,13 +6,13 @@ pipeline {
     }
 
     stages {
-        stage('Build image') {
-            steps {
-                script {
-                    app = docker.build("${IMAGE_NAME}")
-                }
-            }
+        stage('Build-Docker-Image') {
+      steps {
+        container('docker') {
+          sh 'docker build -t b4w4rzr1ng/jenkins .'
         }
+      }
+    }
 
         stage('Test image') {
             steps {
