@@ -3,34 +3,55 @@ pipeline {
 
     environment {
         IMAGE_NAME = "b4w4rzr1ng/jenkins"
+        IMAGE_TAG = "${BUILD_NUMBER}"
     }
 
     stages {
-        stage('Build image') {
+        stage('Clone Repo') {
             steps {
-                script {
-                    app = docker.build("${IMAGE_NAME}")
-                }
+                git 'https://github.com/Bawar-Zring/Jenkins-CI-CD.git'
             }
         }
 
-        stage('Test image') {
+        stage('Build and Push with Kaniko') {
             steps {
                 script {
-                    app.inside {
-                        sh 'echo "Tests passed"'
-                    }
-                }
-            }
-        }
+                    sh """
+                    # Create a Kubernetes job YAML on-the-fly
+                    cat <<EOF > kaniko-job.yaml
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: kaniko-job-${BUILD_NUMBER}
+spec:
+  template:
+    spec:
+      containers:
+      - name: kaniko
+        image: gcr.io/kaniko-project/executor:latest
+        args:
+          - "--dockerfile=/workspace/application/Dockerfile"  
+          - "--context=/workspace/application"  
+          - "--destination=docker.io/${IMAGE_NAME}:${IMAGE_TAG}"
+          - "--destination=docker.io/${IMAGE_NAME}:latest"
+        volumeMounts:
+          - name: workspace
+            mountPath: /workspace
+          - name: kaniko-secret
+            mountPath: /kaniko/.docker
+      restartPolicy: Never
+      volumes:
+        - name: workspace
+          emptyDir: {}
+        - name: kaniko-secret
+          secret:
+            secretName: regcred
+EOF
 
-        stage('Push image') {
-            steps {
-                script {
-                    docker.withRegistry('https://registry.hub.docker.com', 'jenkins') {
-                        app.push("${env.BUILD_NUMBER}")
-                        app.push("latest")
-                    }
+                    kubectl apply -f kaniko-job.yaml
+                    kubectl wait --for=condition=complete job/kaniko-job-${BUILD_NUMBER} --timeout=300s
+                    kubectl delete job kaniko-job-${BUILD_NUMBER}
+                    """
                 }
             }
         }
