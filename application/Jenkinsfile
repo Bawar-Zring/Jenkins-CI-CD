@@ -10,7 +10,7 @@ pipeline {
 apiVersion: v1
 kind: Pod
 spec:
-  serviceAccountName: jenkins   # (if you're using IRSA)
+  serviceAccountName: jenkins-service   # (if you're using IRSA)
   containers:
     - name: kaniko
       image: gcr.io/kaniko-project/executor:debug
@@ -31,9 +31,9 @@ spec:
     IMAGE_TAG       = 'latest'
     // If using AWS, set your region + cluster name
     AWS_REGION      = 'us-east-1'
-    EKS_CLUSTER     = 'my-eks-cluster'
+    EKS_CLUSTER     = 'eks-cluster'
     // If your deployment is in a non-default namespace, set it here
-    KUBE_NAMESPACE  = 'default'
+    KUBE_NAMESPACE  = 'devops-tools'
     DEPLOYMENT_NAME = 'my-flask-deployment'
     CONTAINER_NAME  = 'flask-container' // The container name within your Deployment
   }
