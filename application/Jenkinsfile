@@ -1,57 +1,70 @@
 pipeline {
-    agent any
+    agent {
+        kubernetes {
+            yaml """
+apiVersion: v1
+kind: Pod
+metadata:
+  labels:
+    app: kaniko-job
+spec:
+  containers:
+  - name: kaniko
+    image: gcr.io/kaniko-project/executor:latest
+    command:
+      - cat
+    tty: true
+    volumeMounts:
+      - name: kaniko-secret
+        mountPath: /kaniko/.docker
+      - name: workspace-volume
+        mountPath: /workspace
+  volumes:
+    - name: kaniko-secret
+      secret:
+        secretName: dockerhub-secret
+    - name: workspace-volume
+      emptyDir: {}
+"""
+        }
+    }
 
     environment {
-        IMAGE_NAME = "b4w4rzr1ng/jenkins"
-        IMAGE_TAG = "${BUILD_NUMBER}"
+        DOCKER_IMAGE = "b4w4rzr1ng/jenkins"
     }
 
     stages {
-        stage('Clone Repo') {
+        stage('Checkout Code') {
             steps {
-                git 'https://github.com/Bawar-Zring/Jenkins-CI-CD.git'
+                container('kaniko') {
+                    dir("/workspace") {
+                        git 'https://github.com/Bawar-Zring/Jenkins-CI-CD.git'
+                    }
+                }
             }
         }
 
-        stage('Build and Push with Kaniko') {
+        stage('Build & Push Image with Kaniko') {
             steps {
-                script {
-                    sh """
-                    # Create a Kubernetes job YAML on-the-fly
-                    cat <<EOF > kaniko-job.yaml
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: kaniko-job-${BUILD_NUMBER}
-spec:
-  template:
-    spec:
-      containers:
-      - name: kaniko
-        image: gcr.io/kaniko-project/executor:latest
-        args:
-          - "--dockerfile=/workspace/application/Dockerfile"  
-          - "--context=/workspace/application"  
-          - "--destination=docker.io/${IMAGE_NAME}:${IMAGE_TAG}"
-          - "--destination=docker.io/${IMAGE_NAME}:latest"
-        volumeMounts:
-          - name: workspace
-            mountPath: /workspace
-          - name: kaniko-secret
-            mountPath: /kaniko/.docker
-      restartPolicy: Never
-      volumes:
-        - name: workspace
-          emptyDir: {}
-        - name: kaniko-secret
-          secret:
-            secretName: regcred
-EOF
+                container('kaniko') {
+                    sh '''
+                    /kaniko/executor \
+                      --dockerfile=/workspace/application/Dockerfile \
+                      --context=/workspace \
+                      --destination=${DOCKER_IMAGE}:${BUILD_NUMBER} \
+                      --destination=${DOCKER_IMAGE}:latest \
+                      --skip-tls-verify
+                    '''
+                }
+            }
+        }
 
-                    kubectl apply -f kaniko-job.yaml
-                    kubectl wait --for=condition=complete job/kaniko-job-${BUILD_NUMBER} --timeout=300s
-                    kubectl delete job kaniko-job-${BUILD_NUMBER}
-                    """
+        stage('Deploy to EKS') {
+            steps {
+                container('kaniko') {
+                    sh '''
+                    kubectl set image deployment/your-deployment your-container=${DOCKER_IMAGE}:${BUILD_NUMBER} -n your-namespace
+                    '''
                 }
             }
         }
