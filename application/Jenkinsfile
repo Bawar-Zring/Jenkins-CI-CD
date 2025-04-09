@@ -12,16 +12,18 @@ spec:
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
     command:
-      - /busybox/sh
+      - /kaniko/executor
     args:
-      - -c
-      - "while true; do sleep 30; done"
-    tty: true
+      - "--dockerfile=/workspace/application/Dockerfile"
+      - "--context=/workspace/application"
+      - "--destination=b4w4rzr1ng/jenkins:\${BUILD_NUMBER}"
+      - "--destination=b4w4rzr1ng/jenkins:latest"
+      - "--skip-tls-verify"
     volumeMounts:
       - name: kaniko-secret
         mountPath: /kaniko/.docker
       - name: workspace-volume
-        mountPath: /workspace
+        mountPath: /workspace/application
   volumes:
     - name: kaniko-secret
       secret:
@@ -32,15 +34,12 @@ spec:
         }
     }
 
-    environment {
-        DOCKER_IMAGE = "b4w4rzr1ng/jenkins"
-    }
-
     stages {
         stage('Checkout Code') {
             steps {
                 container('kaniko') {
-                    dir("/workspace") {
+                    // Clone your repo into the shared volume
+                    dir('/workspace/application') {
                         git 'https://github.com/Bawar-Zring/Jenkins-CI-CD.git'
                         sh 'ls -la'
                     }
@@ -48,28 +47,12 @@ spec:
             }
         }
 
-        stage('Build & Push Image with Kaniko') {
-            steps {
-                container('kaniko') {
-                    sh '''
-                    /kaniko/executor \
-                      --dockerfile=/workspace/application/Dockerfile \
-                      --context=/workspace/application \
-                      --destination=${DOCKER_IMAGE}:${BUILD_NUMBER} \
-                      --destination=${DOCKER_IMAGE}:latest \
-                      --skip-tls-verify
-                    '''
-                }
-            }
-        }
-
         stage('Deploy to EKS') {
             steps {
-
-              echo "Deploying to EKS cluster"
+              echo 'Deploying to EKS...'
                 // container('kaniko') {
                 //     sh '''
-                //     kubectl set image deployment/your-deployment your-container=${DOCKER_IMAGE}:${BUILD_NUMBER} -n your-namespace
+                //     kubectl set image deployment/your-deployment your-container=b4w4rzr1ng/jenkins:${BUILD_NUMBER} -n your-namespace
                 //     '''
                 // }
             }
