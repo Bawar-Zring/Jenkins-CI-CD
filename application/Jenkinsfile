@@ -12,7 +12,10 @@ spec:
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
     command:
-      - cat
+      - /busybox/sh
+    args:
+      - -c
+      - "while true; do sleep 30; done"
     tty: true
     volumeMounts:
       - name: kaniko-secret
@@ -39,6 +42,7 @@ spec:
                 container('kaniko') {
                     dir("/workspace") {
                         git 'https://github.com/Bawar-Zring/Jenkins-CI-CD.git'
+                        sh 'ls -la'
                     }
                 }
             }
@@ -50,7 +54,7 @@ spec:
                     sh '''
                     /kaniko/executor \
                       --dockerfile=/workspace/application/Dockerfile \
-                      --context=/workspace \
+                      --context=/workspace/application \
                       --destination=${DOCKER_IMAGE}:${BUILD_NUMBER} \
                       --destination=${DOCKER_IMAGE}:latest \
                       --skip-tls-verify
@@ -61,11 +65,13 @@ spec:
 
         stage('Deploy to EKS') {
             steps {
-                container('kaniko') {
-                    sh '''
-                    kubectl set image deployment/your-deployment your-container=${DOCKER_IMAGE}:${BUILD_NUMBER} -n your-namespace
-                    '''
-                }
+
+              echo "Deploying to EKS cluster"
+                // container('kaniko') {
+                //     sh '''
+                //     kubectl set image deployment/your-deployment your-container=${DOCKER_IMAGE}:${BUILD_NUMBER} -n your-namespace
+                //     '''
+                // }
             }
         }
     }
