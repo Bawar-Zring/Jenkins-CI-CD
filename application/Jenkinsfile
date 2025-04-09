@@ -1,13 +1,8 @@
 pipeline {
-  /* The `kubernetes` agent block instructs Jenkins to run each stage in a
-     temporary pod on your EKS cluster using the Jenkins Kubernetes plugin. */
   agent {
     kubernetes {
-      label 'kaniko'               // Any label you prefer
-      defaultContainer 'jnlp'      // Jenkins communicates using the jnlp container
-      /* This YAML defines the pod spec: it includes a container named 'kaniko',
-         which runs Kaniko in debug mode. The key lines `command: ['cat']` and
-         `tty: true` keep the container alive so Jenkins can run shell steps. */
+      label 'kaniko'
+      defaultContainer 'jnlp'
       yaml """
 apiVersion: v1
 kind: Pod
@@ -21,38 +16,47 @@ spec:
 """
     }
   }
-
-  /* Optionally define environment variables for convenience. These could be
-     your Docker registry, repository, AWS/ECR details, etc. */
   environment {
-    DOCKER_REGISTRY = 'docker.io'                  // or your custom registry
-    DOCKER_REPO     = 'b4w4rzr1ng/jenkins' // e.g. your Docker Hub repo
+    DOCKER_REGISTRY = 'docker.io'
+    DOCKER_REPO     = 'b4w4rzr1ng/jenkins'
     IMAGE_TAG       = 'latest'
   }
-
   stages {
-
     stage('Checkout') {
       steps {
-        /* Make sure the pipeline fetches the code from Git. This is critical so 
-           the Dockerfile is available inside the container. */
         checkout scm
       }
     }
 
     stage('Build & Push') {
       steps {
-        /* Switch context to the 'kaniko' container we defined in the YAML spec. */
         container('kaniko') {
-          /* If you need Docker registry credentials, wrap the build command
-             in a 'withCredentials()' block. See next section for details. */
-          sh """
-            echo "Building Docker image using Kaniko..."
-            /kaniko/executor \\
-              --dockerfile \${WORKSPACE}/application/Dockerfile \\
-              --context    \${WORKSPACE} \\
-              --destination \${DOCKER_REGISTRY}/\${DOCKER_REPO}:\${IMAGE_TAG}
-          """
+          /* This block supplies the Docker credentials to Kaniko */
+          withCredentials([usernamePassword(
+              credentialsId: 'docker hub',     // The ID you created in Jenkins
+              usernameVariable: 'DOCKER_USER',
+              passwordVariable: 'DOCKER_PASS'
+          )]) {
+            sh """
+              echo "Writing Docker Hub credentials to /kaniko/.docker/config.json..."
+              mkdir -p /kaniko/.docker
+              cat <<EOF > /kaniko/.docker/config.json
+{
+  "auths": {
+    "https://index.docker.io/v1/": {
+      "auth": "$(echo -n ${DOCKER_USER}:${DOCKER_PASS} | base64)"
+    }
+  }
+}
+EOF
+
+              echo "Building Docker image using Kaniko..."
+              /kaniko/executor \\
+                --dockerfile \${WORKSPACE}/application/Dockerfile \\
+                --context    \${WORKSPACE}/application \\
+                --destination \${DOCKER_REGISTRY}/\${DOCKER_REPO}:\${IMAGE_TAG}
+            """
+          }
         }
       }
     }
