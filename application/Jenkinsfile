@@ -1,7 +1,7 @@
 pipeline {
   agent {
     kubernetes {
-      label 'kaniko'
+      label 'kaniko-kubectl'
       defaultContainer 'jnlp'
       yaml """
 apiVersion: v1
@@ -13,33 +13,64 @@ spec:
       command:
         - cat
       tty: true
+    - name: kubectl
+      # This container has awscli and kubectl. The bitnami/kubectl image doesn't include awscli by default,
+      # so we can use amazon/aws-cli plus an install of kubectl, or a custom image. For example:
+      image: amazon/aws-cli:2.12.2
+      command:
+        - cat
+      tty: true
+      # If using amazon/aws-cli image, you'll need to install kubectl inside it at runtime, or
+      # use a custom image that has both installed. Here's how you can do it inline (one approach):
+      # (Note: This is run *every* time a new pod spins up. For performance, a custom image is better.)
+      volumeMounts:
+        - name: kubectl-install
+          mountPath: /tmp
+  volumes:
+    - name: kubectl-install
+      emptyDir: {}
 """
     }
   }
+
   environment {
+    // Docker image info
     DOCKER_REGISTRY = 'docker.io'
     DOCKER_REPO     = 'b4w4rzr1ng/jenkins'
     IMAGE_TAG       = 'latest'
+
+    // EKS cluster info
+    AWS_REGION      = 'us-east-1'
+    EKS_CLUSTER     = 'eks-cluster'
+    KUBE_NAMESPACE  = 'devops-tools'
+    DEPLOYMENT_NAME = 'my-flask-deployment'
+    CONTAINER_NAME  = 'flask-container'
   }
+
   stages {
+
     stage('Checkout') {
       steps {
         checkout scm
       }
     }
 
+    // 1) Build & push Docker image with Kaniko.
     stage('Build & Push') {
-  steps {
-    container('kaniko') {
-      withCredentials([usernamePassword(
-          credentialsId: 'docker hub', 
-          usernameVariable: 'DOCKER_USER',
-          passwordVariable: 'DOCKER_PASS'
-      )]) {
-        sh '''
-          echo "Writing Docker Hub credentials to /kaniko/.docker/config.json..."
-          mkdir -p /kaniko/.docker
-          cat <<EOF > /kaniko/.docker/config.json
+      steps {
+        // Switch to the Kaniko container
+        container('kaniko') {
+          withCredentials([
+            usernamePassword(
+              credentialsId: 'docker hub', // Replace with your actual Docker creds ID
+              usernameVariable: 'DOCKER_USER',
+              passwordVariable: 'DOCKER_PASS'
+            )
+          ]) {
+            sh '''
+              echo "Creating Docker config for Kaniko..."
+              mkdir -p /kaniko/.docker
+              cat <<EOF > /kaniko/.docker/config.json
 {
   "auths": {
     "https://index.docker.io/v1/": {
@@ -49,16 +80,48 @@ spec:
 }
 EOF
 
-          echo "Building Docker image using Kaniko..."
-          /kaniko/executor \
-            --dockerfile $WORKSPACE/application/Dockerfile \
-            --context    $WORKSPACE/application \
-            --destination docker.io/b4w4rzr1ng/jenkins:${BUILD_NUMBER} 
-        '''
+              echo "Building & pushing Docker image with Kaniko..."
+              /kaniko/executor \
+                --dockerfile $WORKSPACE/application/Dockerfile \
+                --context    $WORKSPACE/application \
+                --destination $DOCKER_REGISTRY/$DOCKER_REPO:${BUILD_NUMBER} 
+            '''
+          }
+        }
       }
     }
-  }
-}
 
+    // 2) Deploy to EKS using AWS CLI + kubectl
+    stage('Deploy to EKS') {
+      steps {
+        // Switch to the container that has AWS CLI (and we'll install kubectl).
+        container('kubectl') {
+          withCredentials([[
+            $class: 'AmazonWebServicesCredentialsBinding',
+            credentialsId: 'aws-creds' // Replace with your actual AWS cred ID
+          ]]) {
+            sh '''
+              # Install kubectl (only if your AWS CLI image does not have it).
+              # If you have a custom image with both AWS CLI & kubectl, skip this.
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              mv kubectl /usr/local/bin/kubectl
+
+              echo "Configuring AWS CLI with EKS..."
+              aws --version
+              aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
+
+              echo "Updating the EKS deployment container image..."
+              kubectl set image deployment/$DEPLOYMENT_NAME \
+                $CONTAINER_NAME=$DOCKER_REGISTRY/$DOCKER_REPO:${BUILD_NUMBER} \
+                --namespace $KUBE_NAMESPACE
+
+              echo "Waiting for rollout to complete..."
+              kubectl rollout status deployment/$DEPLOYMENT_NAME -n $KUBE_NAMESPACE
+            '''
+          }
+        }
+      }
+    }
   }
 }
