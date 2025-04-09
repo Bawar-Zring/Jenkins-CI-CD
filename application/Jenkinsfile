@@ -9,6 +9,15 @@ metadata:
     app: kaniko-job
 spec:
   containers:
+  - name: git
+    image: alpine/git
+    command:
+      - cat
+    tty: true
+    volumeMounts:
+      - name: workspace-volume
+        mountPath: /workspace/application
+
   - name: kaniko
     image: gcr.io/kaniko-project/executor:latest
     command:
@@ -24,6 +33,7 @@ spec:
         mountPath: /kaniko/.docker
       - name: workspace-volume
         mountPath: /workspace/application
+
   volumes:
     - name: kaniko-secret
       secret:
@@ -37,9 +47,9 @@ spec:
     stages {
         stage('Checkout Code') {
             steps {
-                container('kaniko') {
+                container('git') {
                     dir('/workspace/application') {
-                        git 'https://github.com/Bawar-Zring/Jenkins-CI-CD.git'
+                        sh 'git clone https://github.com/Bawar-Zring/Jenkins-CI-CD.git .'
                         sh 'ls -la'
                     }
                 }
@@ -48,12 +58,7 @@ spec:
 
         stage('Deploy to EKS') {
             steps {
-              echo 'Deploying to EKS...'
-                // container('kaniko') {
-                //     sh '''
-                //     kubectl set image deployment/your-deployment your-container=b4w4rzr1ng/jenkins:${BUILD_NUMBER} -n your-namespace
-                //     '''
-                // }
+                echo 'Ready to deploy...'
             }
         }
     }
