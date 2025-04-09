@@ -92,30 +92,43 @@ EOF
     }
 
     // 2) Deploy to EKS using AWS CLI + kubectl
-    stage('Deploy to EKS') {
+        stage('Deploy to EKS') {
       steps {
-        // Switch to the container that has AWS CLI (and we'll install kubectl).
         container('kubectl') {
           withCredentials([
-  usernamePassword(
-    credentialsId: 'aws-access-key', // Replace with your actual AWS creds ID
-    usernameVariable: 'AWS_ACCESS_KEY_ID',
-    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
-  )
-]) {
-  sh """
-    aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
-    aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
-    aws configure set region us-east-1
+            usernamePassword(
+              credentialsId: 'aws-access-key', // Replace with your actual AWS creds ID
+              usernameVariable: 'AWS_ACCESS_KEY_ID',
+              passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+            )
+          ]) {
+            sh '''
+              # Install kubectl in amazon/aws-cli container at runtime
+              echo "Installing kubectl..."
+              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+              chmod +x kubectl
+              mv kubectl /usr/local/bin/kubectl
 
-    # Then run your commands
-    aws eks --region us-east-1 update-kubeconfig --name $EKS_CLUSTER
-    echo "Updating the EKS deployment container image..."
-              kubectl set image deployment/$DEPLOYMENT_NAME \
-                $CONTAINER_NAME=$DOCKER_REGISTRY/$DOCKER_REPO:${BUILD_NUMBER} \
-                --namespace $KUBE_NAMESPACE
-  """
-}
+              # Confirm it's installed
+              kubectl version --client
+
+              # Now configure AWS credentials
+              aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+              aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+              aws configure set region us-east-1
+
+              # Update kubeconfig for your EKS cluster
+              aws eks --region us-east-1 update-kubeconfig --name eks-cluster
+
+              # Use kubectl to set the container image in your Deployment
+              echo "Updating the EKS deployment container image..."
+              kubectl set image deployment/my-flask-deployment \
+                flask-container=docker.io/b4w4rzr1ng/jenkins:29 \
+                --namespace devops-tools
+
+              kubectl rollout status deployment/my-flask-deployment -n devops-tools
+            '''
+          }
         }
       }
     }
