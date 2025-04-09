@@ -53,7 +53,7 @@ EOF
           /kaniko/executor \
             --dockerfile $WORKSPACE/application/Dockerfile \
             --context    $WORKSPACE/application \
-            --destination docker.io/b4w4rzr1ng/jenkins:latest
+            --destination docker.io/b4w4rzr1ng/jenkins:${BUILD_NUMBER} 
         '''
       }
     }
