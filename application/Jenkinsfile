@@ -96,30 +96,26 @@ EOF
       steps {
         // Switch to the container that has AWS CLI (and we'll install kubectl).
         container('kubectl') {
-          withCredentials([[
-            $class: 'AmazonWebServicesCredentialsBinding',
-            credentialsId: 'aws-creds' // Replace with your actual AWS cred ID
-          ]]) {
-            sh '''
-              # Install kubectl (only if your AWS CLI image does not have it).
-              # If you have a custom image with both AWS CLI & kubectl, skip this.
-              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-              chmod +x kubectl
-              mv kubectl /usr/local/bin/kubectl
+          withCredentials([
+  usernamePassword(
+    credentialsId: 'aws-access-key', // Replace with your actual AWS creds ID
+    usernameVariable: 'AWS_ACCESS_KEY_ID',
+    passwordVariable: 'AWS_SECRET_ACCESS_KEY'
+  )
+]) {
+  sh """
+    aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+    aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+    aws configure set region us-east-1
 
-              echo "Configuring AWS CLI with EKS..."
-              aws --version
-              aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
-
-              echo "Updating the EKS deployment container image..."
+    # Then run your commands
+    aws eks --region us-east-1 update-kubeconfig --name my-eks-cluster
+    echo "Updating the EKS deployment container image..."
               kubectl set image deployment/$DEPLOYMENT_NAME \
                 $CONTAINER_NAME=$DOCKER_REGISTRY/$DOCKER_REPO:${BUILD_NUMBER} \
                 --namespace $KUBE_NAMESPACE
-
-              echo "Waiting for rollout to complete..."
-              kubectl rollout status deployment/$DEPLOYMENT_NAME -n $KUBE_NAMESPACE
-            '''
-          }
+  """
+}
         }
       }
     }
