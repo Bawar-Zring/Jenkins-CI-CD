@@ -31,9 +31,8 @@ spec:
     stage('Build & Push') {
       steps {
         container('kaniko') {
-          /* This block supplies the Docker credentials to Kaniko */
           withCredentials([usernamePassword(
-              credentialsId: 'docker hub',     // The ID you created in Jenkins
+              credentialsId: 'docker hub',
               usernameVariable: 'DOCKER_USER',
               passwordVariable: 'DOCKER_PASS'
           )]) {
