@@ -1,24 +1,15 @@
 pipeline {
   agent {
     kubernetes {
-      label 'kaniko-and-kubectl'
+      label 'kaniko'
       defaultContainer 'jnlp'
-      /* We define 2 containers:
-         1) 'kaniko': for building & pushing Docker images.
-         2) 'kubectl': for running deployment commands on EKS. */
       yaml """
 apiVersion: v1
 kind: Pod
 spec:
-  serviceAccountName: jenkins-service   # (if you're using IRSA)
   containers:
     - name: kaniko
       image: gcr.io/kaniko-project/executor:debug
-      command:
-        - cat
-      tty: true
-    - name: kubectl
-      image: bitnami/kubectl:latest
       command:
         - cat
       tty: true
@@ -27,19 +18,10 @@ spec:
   }
   environment {
     DOCKER_REGISTRY = 'docker.io'
-    DOCKER_REPO     = 'b4w4rzr1ng/jenkins'  // Adjust to your user/repo name
+    DOCKER_REPO     = 'b4w4rzr1ng/jenkins'
     IMAGE_TAG       = 'latest'
-    // If using AWS, set your region + cluster name
-    AWS_REGION      = 'us-east-1'
-    EKS_CLUSTER     = 'eks-cluster'
-    // If your deployment is in a non-default namespace, set it here
-    KUBE_NAMESPACE  = 'devops-tools'
-    DEPLOYMENT_NAME = 'my-flask-deployment'
-    CONTAINER_NAME  = 'flask-container' // The container name within your Deployment
   }
-
   stages {
-
     stage('Checkout') {
       steps {
         checkout scm
@@ -47,21 +29,17 @@ spec:
     }
 
     stage('Build & Push') {
-      steps {
-        container('kaniko') {
-          /* withCredentials block for Docker Hub username/password.
-             Adjust 'credentialsId' to match what you have in Jenkins. */
-          withCredentials([
-            usernamePassword(
-              credentialsId: 'dockerhub-creds',
-              usernameVariable: 'DOCKER_USER',
-              passwordVariable: 'DOCKER_PASS'
-            )
-          ]) {
-            sh '''
-              echo "Writing Docker credentials..."
-              mkdir -p /kaniko/.docker
-              cat <<EOF > /kaniko/.docker/config.json
+  steps {
+    container('kaniko') {
+      withCredentials([usernamePassword(
+          credentialsId: 'docker hub', 
+          usernameVariable: 'DOCKER_USER',
+          passwordVariable: 'DOCKER_PASS'
+      )]) {
+        sh '''
+          echo "Writing Docker Hub credentials to /kaniko/.docker/config.json..."
+          mkdir -p /kaniko/.docker
+          cat <<EOF > /kaniko/.docker/config.json
 {
   "auths": {
     "https://index.docker.io/v1/": {
@@ -71,45 +49,16 @@ spec:
 }
 EOF
 
-              echo "Building & pushing Docker image with Kaniko..."
-              /kaniko/executor \
-                --dockerfile $WORKSPACE/application/Dockerfile \
-                --context    $WORKSPACE/application \
-                --destination $DOCKER_REGISTRY/$DOCKER_REPO:$IMAGE_TAG
-            '''
-          }
-        }
+          echo "Building Docker image using Kaniko..."
+          /kaniko/executor \
+            --dockerfile $WORKSPACE/application/Dockerfile \
+            --context    $WORKSPACE/application \
+            --destination docker.io/b4w4rzr1ng/jenkins:${BUILD_NUMBER} 
+        '''
       }
     }
-
-    stage('Deploy to EKS') {
-      steps {
-        /* Switch to the container with kubectl installed. */
-        container('kubectl') {
-          script {
-            /* If you use IRSA, you might not need this withCredentials block.
-               If you want to authenticate via AWS CLI, you'd do something like: */
-            withCredentials([[
-              $class: 'AmazonWebServicesCredentialsBinding',
-              credentialsId: 'aws-creds'
-            ]]) {
-              sh '''
-                # If you do NOT rely on IRSA, you can authenticate with AWS CLI:
-                # aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
-
-                echo "Updating EKS deployment with the new Docker image..."
-                kubectl set image deployment/$DEPLOYMENT_NAME \
-                  $CONTAINER_NAME=$DOCKER_REGISTRY/$DOCKER_REPO:$IMAGE_TAG \
-                  --namespace $KUBE_NAMESPACE
-
-                echo "Ensuring the deployment is updated..."
-                kubectl rollout status deployment/$DEPLOYMENT_NAME -n $KUBE_NAMESPACE
-              '''
-            }
-          }
-        }
-      }
-    }
+  }
+}
 
   }
 }
