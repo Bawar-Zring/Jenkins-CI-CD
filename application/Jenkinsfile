@@ -31,30 +31,33 @@ spec:
     stage('Build & Push') {
       steps {
         container('kaniko') {
-          withCredentials([usernamePassword(
-              credentialsId: 'docker hub',
+          withCredentials([
+            usernamePassword(
+              credentialsId: 'docker hub', // Make sure this matches your Jenkins credentials ID
               usernameVariable: 'DOCKER_USER',
               passwordVariable: 'DOCKER_PASS'
-          )]) {
-            sh """
+            )
+          ]) {
+            // Use triple single quotes to avoid Groovy’s GString conflicts
+            sh '''
               echo "Writing Docker Hub credentials to /kaniko/.docker/config.json..."
               mkdir -p /kaniko/.docker
               cat <<EOF > /kaniko/.docker/config.json
 {
   "auths": {
     "https://index.docker.io/v1/": {
-      "auth": "$(echo -n ${DOCKER_USER}:${DOCKER_PASS} | base64)"
+      "auth": "'$(echo -n $DOCKER_USER:$DOCKER_PASS | base64)'"
     }
   }
 }
 EOF
 
               echo "Building Docker image using Kaniko..."
-              /kaniko/executor \\
-                --dockerfile \${WORKSPACE}/application/Dockerfile \\
-                --context    \${WORKSPACE}/application \\
-                --destination \${DOCKER_REGISTRY}/\${DOCKER_REPO}:\${IMAGE_TAG}
-            """
+              /kaniko/executor \
+                --dockerfile $WORKSPACE/application/Dockerfile \
+                --context    $WORKSPACE/application \
+                --destination $DOCKER_REGISTRY/$DOCKER_REPO:$IMAGE_TAG
+            '''
           }
         }
       }
