@@ -122,9 +122,9 @@ EOF
 
               # Use kubectl to set the container image in your Deployment
               echo "Updating the EKS deployment container image..."
-              kubectl set image deployment/my-flask-deployment \
-                flask-container=docker.io/b4w4rzr1ng/jenkins:29 \
-                --namespace devops-tools
+              kubectl set image deployment/$DEPLOYMENT_NAME \
+                $CONTAINER_NAME=$DOCKER_REGISTRY/$DOCKER_REPO:${BUILD_NUMBER} \
+                --namespace $KUBE_NAMESPACE
 
               kubectl rollout status deployment/my-flask-deployment -n devops-tools
             '''
