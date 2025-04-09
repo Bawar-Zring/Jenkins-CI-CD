@@ -14,11 +14,11 @@ spec:
     command:
       - /kaniko/executor
     args:
-      - "--dockerfile=/workspace/application/Dockerfile"
-      - "--context=/workspace/application"
-      - "--destination=b4w4rzr1ng/jenkins:\${BUILD_NUMBER}"
-      - "--destination=b4w4rzr1ng/jenkins:latest"
-      - "--skip-tls-verify"
+      - --dockerfile=/workspace/application/Dockerfile
+      - --context=/workspace/application
+      - --destination=b4w4rzr1ng/jenkins:${BUILD_NUMBER}
+      - --destination=b4w4rzr1ng/jenkins:latest
+      - --skip-tls-verify
     volumeMounts:
       - name: kaniko-secret
         mountPath: /kaniko/.docker
@@ -38,7 +38,6 @@ spec:
         stage('Checkout Code') {
             steps {
                 container('kaniko') {
-                    // Clone your repo into the shared volume
                     dir('/workspace/application') {
                         git 'https://github.com/Bawar-Zring/Jenkins-CI-CD.git'
                         sh 'ls -la'
