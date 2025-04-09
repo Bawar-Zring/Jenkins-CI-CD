@@ -1,65 +1,60 @@
 pipeline {
-    agent {
-        kubernetes {
-            yaml """
+  /* The `kubernetes` agent block instructs Jenkins to run each stage in a
+     temporary pod on your EKS cluster using the Jenkins Kubernetes plugin. */
+  agent {
+    kubernetes {
+      label 'kaniko'               // Any label you prefer
+      defaultContainer 'jnlp'      // Jenkins communicates using the jnlp container
+      /* This YAML defines the pod spec: it includes a container named 'kaniko',
+         which runs Kaniko in debug mode. The key lines `command: ['cat']` and
+         `tty: true` keep the container alive so Jenkins can run shell steps. */
+      yaml """
 apiVersion: v1
 kind: Pod
-metadata:
-  labels:
-    app: kaniko-job
 spec:
   containers:
-  - name: git
-    image: alpine/git
-    command:
-      - cat
-    tty: true
-    volumeMounts:
-      - name: workspace-volume
-        mountPath: /workspace/application
-
-  - name: kaniko
-    image: gcr.io/kaniko-project/executor:latest
-    command:
-      - /kaniko/executor
-    args:
-      - --dockerfile=/workspace/application/Dockerfile
-      - --context=/workspace/application
-      - --destination=b4w4rzr1ng/jenkins:${BUILD_NUMBER}
-      - --destination=b4w4rzr1ng/jenkins:latest
-      - --skip-tls-verify
-    volumeMounts:
-      - name: kaniko-secret
-        mountPath: /kaniko/.docker
-      - name: workspace-volume
-        mountPath: /workspace/application
-
-  volumes:
-    - name: kaniko-secret
-      secret:
-        secretName: dockerhub-secret
-    - name: workspace-volume
-      emptyDir: {}
+    - name: kaniko
+      image: gcr.io/kaniko-project/executor:debug
+      command:
+        - cat
+      tty: true
 """
-        }
+    }
+  }
+
+  /* Optionally define environment variables for convenience. These could be
+     your Docker registry, repository, AWS/ECR details, etc. */
+  environment {
+    DOCKER_REGISTRY = 'docker.io'                  // or your custom registry
+    DOCKER_REPO     = 'b4w4rzr1ng/jenkins' // e.g. your Docker Hub repo
+    IMAGE_TAG       = 'latest'
+  }
+
+  stages {
+
+    stage('Checkout') {
+      steps {
+        /* Make sure the pipeline fetches the code from Git. This is critical so 
+           the Dockerfile is available inside the container. */
+        checkout scm
+      }
     }
 
-    stages {
-        stage('Checkout Code') {
-            steps {
-                container('git') {
-                    dir('/workspace/application') {
-                        sh 'git clone https://github.com/Bawar-Zring/Jenkins-CI-CD.git .'
-                        sh 'ls -la'
-                    }
-                }
-            }
+    stage('Build & Push') {
+      steps {
+        /* Switch context to the 'kaniko' container we defined in the YAML spec. */
+        container('kaniko') {
+          /* If you need Docker registry credentials, wrap the build command
+             in a 'withCredentials()' block. See next section for details. */
+          sh """
+            echo "Building Docker image using Kaniko..."
+            /kaniko/executor \\
+              --dockerfile \${WORKSPACE}/application/Dockerfile \\
+              --context    \${WORKSPACE} \\
+              --destination \${DOCKER_REGISTRY}/\${DOCKER_REPO}:\${IMAGE_TAG}
+          """
         }
-
-        stage('Deploy to EKS') {
-            steps {
-                echo 'Ready to deploy...'
-            }
-        }
+      }
     }
+  }
 }
