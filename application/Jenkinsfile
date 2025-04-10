@@ -14,15 +14,10 @@ spec:
         - cat
       tty: true
     - name: kubectl
-      # This container has awscli and kubectl. The bitnami/kubectl image doesn't include awscli by default,
-      # so we can use amazon/aws-cli plus an install of kubectl, or a custom image. For example:
       image: amazon/aws-cli:2.12.2
       command:
         - cat
       tty: true
-      # If using amazon/aws-cli image, you'll need to install kubectl inside it at runtime, or
-      # use a custom image that has both installed. Here's how you can do it inline (one approach):
-      # (Note: This is run *every* time a new pod spins up. For performance, a custom image is better.)
       volumeMounts:
         - name: kubectl-install
           mountPath: /tmp
@@ -34,12 +29,10 @@ spec:
   }
 
   environment {
-    // Docker image info
     DOCKER_REGISTRY = 'docker.io'
     DOCKER_REPO     = 'b4w4rzr1ng/jenkins'
     IMAGE_TAG       = 'latest'
 
-    // EKS cluster info
     AWS_REGION      = 'us-east-1'
     EKS_CLUSTER     = 'eks-cluster'
     KUBE_NAMESPACE  = 'devops-tools'
@@ -48,21 +41,18 @@ spec:
   }
 
   stages {
-
     stage('Checkout') {
       steps {
         checkout scm
       }
     }
 
-    // 1) Build & push Docker image with Kaniko.
     stage('Build & Push') {
       steps {
-        // Switch to the Kaniko container
         container('kaniko') {
           withCredentials([
             usernamePassword(
-              credentialsId: 'docker hub', // Replace with your actual Docker creds ID
+              credentialsId: 'docker hub', 
               usernameVariable: 'DOCKER_USER',
               passwordVariable: 'DOCKER_PASS'
             )
@@ -91,42 +81,36 @@ EOF
       }
     }
 
-    // 2) Deploy to EKS using AWS CLI + kubectl
-        stage('Deploy to EKS') {
+    stage('Deploy to EKS') {
       steps {
         container('kubectl') {
           withCredentials([
             usernamePassword(
-              credentialsId: 'aws-access-key', // Replace with your actual AWS creds ID
+              credentialsId: 'aws-access-key',
               usernameVariable: 'AWS_ACCESS_KEY_ID',
               passwordVariable: 'AWS_SECRET_ACCESS_KEY'
             )
           ]) {
             sh '''
-              # Install kubectl in amazon/aws-cli container at runtime
               echo "Installing kubectl..."
               curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
               chmod +x kubectl
               mv kubectl /usr/local/bin/kubectl
 
-              # Confirm it's installed
               kubectl version --client
 
-              # Now configure AWS credentials
               aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
               aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
-              aws configure set region us-east-1
+              aws configure set region $AWS_REGION
 
-              # Update kubeconfig for your EKS cluster
-              aws eks --region us-east-1 update-kubeconfig --name eks-cluster
+              aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
 
-              # Use kubectl to set the container image in your Deployment
               echo "Updating the EKS deployment container image..."
               kubectl set image deployment/$DEPLOYMENT_NAME \
                 $CONTAINER_NAME=$DOCKER_REGISTRY/$DOCKER_REPO:${BUILD_NUMBER} \
                 --namespace $KUBE_NAMESPACE
 
-              kubectl rollout status deployment/my-flask-deployment -n devops-tools
+              kubectl rollout status deployment/$DEPLOYMENT_NAME -n $KUBE_NAMESPACE
             '''
           }
         }
