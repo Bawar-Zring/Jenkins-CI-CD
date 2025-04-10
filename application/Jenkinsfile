@@ -42,6 +42,7 @@ spec:
     stage('Get ECR Auth & Build Image') {
       steps {
         script {
+          // 1) Generate ECR token in the 'kubectl' container
           container('kubectl') {
             withCredentials([
               usernamePassword(
@@ -58,18 +59,21 @@ spec:
 
                 echo "[kubectl container] Retrieving ECR auth token..."
                 TOKEN=$(aws ecr get-login-password --region $AWS_REGION)
+                # Write WITHOUT a trailing newline:
                 echo -n "$TOKEN" > $WORKSPACE/ecr_token
               '''
             }
           }
 
+          // 2) Kaniko container: read token, create Docker config, and push
           container('kaniko') {
             sh '''
               echo "[kaniko container] Creating Docker config for ECR..."
               mkdir -p /kaniko/.docker
 
               TOKEN=$(cat $WORKSPACE/ecr_token)
-              AUTH_VAL=$(echo -n "AWS:${TOKEN}" | base64)
+              # Ensure base64 is single-line
+              AUTH_VAL=$(echo -n "AWS:${TOKEN}" | base64 | tr -d '\\n')
 
               cat <<EOF > /kaniko/.docker/config.json
 {
@@ -103,7 +107,7 @@ EOF
             )
           ]) {
             sh '''
-              echo "[kubectl container] Installing kubectl..."
+              echo "[kubectl container] Installing kubectl (aws-cli doesn't include it)..."
               curl -LO "https://dl.k8s.io/release/$(curl -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
               chmod +x kubectl
               mv kubectl /usr/local/bin/kubectl
@@ -115,7 +119,7 @@ EOF
               aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
               aws configure set region $AWS_REGION
 
-              echo "[kubectl container] Updating kubeconfig to access the EKS cluster..."
+              echo "[kubectl container] Updating kubeconfig to access EKS..."
               aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
 
               echo "[kubectl container] Updating the EKS deployment container image..."
@@ -123,7 +127,7 @@ EOF
                 $CONTAINER_NAME=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/$ECR_REPO:$BUILD_NUMBER \
                 --namespace $KUBE_NAMESPACE
 
-              echo "[kubectl container] Waiting for the rollout to finish..."
+              echo "[kubectl container] Waiting for rollout..."
               kubectl rollout status deployment/$DEPLOYMENT_NAME -n $KUBE_NAMESPACE
             '''
           }
