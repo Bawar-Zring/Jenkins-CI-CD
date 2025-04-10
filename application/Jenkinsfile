@@ -42,7 +42,6 @@ spec:
     stage('Get ECR Auth & Build Image') {
       steps {
         script {
-          // 1) Generate ECR token in the 'kubectl' container
           container('kubectl') {
             withCredentials([
               usernamePassword(
@@ -65,14 +64,12 @@ spec:
             }
           }
 
-          // 2) Kaniko container: read token, create Docker config, and push
           container('kaniko') {
             sh '''
               echo "[kaniko container] Creating Docker config for ECR..."
               mkdir -p /kaniko/.docker
 
               TOKEN=$(cat $WORKSPACE/ecr_token)
-              # Ensure base64 is single-line
               AUTH_VAL=$(echo -n "AWS:${TOKEN}" | base64 | tr -d '\\n')
 
               cat <<EOF > /kaniko/.docker/config.json
