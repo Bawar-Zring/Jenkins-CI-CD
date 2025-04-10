@@ -3,68 +3,18 @@ kind: Deployment
 metadata:
   name: my-flask-deployment
   namespace: devops-tools
-  labels:
-    app: flask-deploy
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: flask-temp
+      app: flask
   template:
     metadata:
       labels:
-        app: flask-temp
+        app: flask
     spec:
       containers:
-        - name: flask
-          image: docker.io/b4w4rzr1ng/jenkins:latest
-          ports:
-            - containerPort: 5000
-          env:
-            - name: POSTGRES_USER
-              valueFrom:
-                secretKeyRef:
-                  name: credentials
-                  key: POSTGRES_USER
-            - name: POSTGRES_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: credentials
-                  key: POSTGRES_PASSWORD
-            - name: POSTGRES_DB
-              value: "testdb"
-            - name: POSTGRES_HOST
-              valueFrom:
-                secretKeyRef:
-                  name: aws-endpoints
-                  key: POSTGRES_HOST
-            - name: POSTGRES_PORT
-              value: "5432"
-            - name: REDIS_HOST
-              valueFrom:
-                secretKeyRef:
-                  name: aws-endpoints
-                  key: REDIS_HOST
-            - name: REDIS_PORT
-              value: "6379"
-          volumeMounts:
-            - mountPath: /data
-              name: data
-      volumes:
-        - name: data
-          persistentVolumeClaim:
-            claimName: pvc
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: my-flask-deployment-service
-  namespace: devops-tools
-spec:
-  selector:
-    app: flask-temp
-  ports:
-    - protocol: TCP
-      port: 5000
-      targetPort: 5000
-  type: LoadBalancer
+      - name: flask-container
+        image: docker.io/b4w4rzr1ng/jenkins:latest
+        ports:
+        - containerPort: 5000
