@@ -93,7 +93,7 @@ EOF
               /kaniko/executor \
                 --dockerfile $WORKSPACE/application/Dockerfile \
                 --context    $WORKSPACE/application \
-                --destination ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/$ECR_REPO:$IMAGE_TAG
+                --destination 646691617145.dkr.ecr.us-east-1.amazonaws.com/my-flask-app:$IMAGE_TAG
             '''
           }
         }
