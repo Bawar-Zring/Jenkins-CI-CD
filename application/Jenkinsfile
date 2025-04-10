@@ -23,15 +23,9 @@ spec:
   }
 
   environment {
-    // Replace with your actual AWS Account ID and ECR repo name
     ACCOUNT_ID      = '646691617145'
     AWS_REGION      = 'us-east-1'
     ECR_REPO        = 'my-flask-app'
-
-    // We'll tag images by the Jenkins build number
-    IMAGE_TAG       = "${BUILD_NUMBER}"
-
-    // EKS details
     EKS_CLUSTER     = 'eks-cluster'
     KUBE_NAMESPACE  = 'devops-tools'
     DEPLOYMENT_NAME = 'my-flask-deployment'
@@ -48,7 +42,6 @@ spec:
     stage('Get ECR Auth & Build Image') {
       steps {
         script {
-          // 1) In the kubectl container, authenticate with AWS and get ECR token
           container('kubectl') {
             withCredentials([
               usernamePassword(
@@ -70,7 +63,6 @@ spec:
             }
           }
 
-          // 2) In the kaniko container, read that token and create the Docker config
           container('kaniko') {
             sh '''
               echo "[kaniko container] Creating Docker config for ECR..."
@@ -128,7 +120,7 @@ EOF
 
               echo "Updating the EKS deployment container image to ECR image..."
               kubectl set image deployment/$DEPLOYMENT_NAME \
-                $CONTAINER_NAME=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/$ECR_REPO:$IMAGE_TAG \
+                $CONTAINER_NAME=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/$ECR_REPO:$BUILD_NUMBER \
                 --namespace $KUBE_NAMESPACE
 
               echo "Waiting for the rollout to finish..."
