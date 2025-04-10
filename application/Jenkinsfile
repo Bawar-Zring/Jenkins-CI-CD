@@ -28,12 +28,12 @@ spec:
     }
   }
 
+  /* ENV variables: replace these with your real AWS Account ID, ECR repo name, etc. */
   environment {
-    DOCKER_REGISTRY = 'docker.io'
-    DOCKER_REPO     = 'b4w4rzr1ng/jenkins'
-    IMAGE_TAG       = 'latest'
-
+    ACCOUNT_ID      = '646691617145'       // Your AWS account
     AWS_REGION      = 'us-east-1'
+    ECR_REPO        = 'my-flask-app'       // The ECR repository name
+    IMAGE_TAG       = "${BUILD_NUMBER}"    // Or 'latest'
     EKS_CLUSTER     = 'eks-cluster'
     KUBE_NAMESPACE  = 'devops-tools'
     DEPLOYMENT_NAME = 'my-flask-deployment'
@@ -41,30 +41,43 @@ spec:
   }
 
   stages {
+
     stage('Checkout') {
       steps {
         checkout scm
       }
     }
 
-    stage('Build & Push') {
+    stage('Build & Push to ECR') {
       steps {
         container('kaniko') {
+          /* Use your AWS credentials here to get an ECR auth token.
+             We'll build a Docker config with "auth" that Kaniko can use. */
           withCredentials([
             usernamePassword(
-              credentialsId: 'docker hub', 
-              usernameVariable: 'DOCKER_USER',
-              passwordVariable: 'DOCKER_PASS'
+              credentialsId: 'aws-access-key',  // ID from Jenkins Credentials
+              usernameVariable: 'AWS_ACCESS_KEY_ID',
+              passwordVariable: 'AWS_SECRET_ACCESS_KEY'
             )
           ]) {
             sh '''
-              echo "Creating Docker config for Kaniko..."
+              echo "Configuring AWS credentials..."
+              aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
+              aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
+              aws configure set region $AWS_REGION
+
+              echo "Creating Docker config for Kaniko to push to ECR..."
               mkdir -p /kaniko/.docker
+
+              # We combine 'AWS' as the username + the ECR token as the password, then base64-encode "AWS:<token>"
+              ECR_PASS=$(aws ecr get-login-password --region $AWS_REGION)
+              AUTH_VAL=$(echo -n "AWS:${ECR_PASS}" | base64)
+
               cat <<EOF > /kaniko/.docker/config.json
 {
   "auths": {
-    "https://index.docker.io/v1/": {
-      "auth": "$(echo -n $DOCKER_USER:$DOCKER_PASS | base64)"
+    "${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com": {
+      "auth": "${AUTH_VAL}"
     }
   }
 }
@@ -74,7 +87,7 @@ EOF
               /kaniko/executor \
                 --dockerfile $WORKSPACE/application/Dockerfile \
                 --context    $WORKSPACE/application \
-                --destination $DOCKER_REGISTRY/$DOCKER_REPO:${BUILD_NUMBER} 
+                --destination ${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/$ECR_REPO:$IMAGE_TAG
             '''
           }
         }
@@ -84,6 +97,7 @@ EOF
     stage('Deploy to EKS') {
       steps {
         container('kubectl') {
+          /* Reuse the same AWS creds for EKS operations. */
           withCredentials([
             usernamePassword(
               credentialsId: 'aws-access-key',
@@ -92,6 +106,7 @@ EOF
             )
           ]) {
             sh '''
+              # Install kubectl (amazon/aws-cli container doesn't include it by default)
               echo "Installing kubectl..."
               curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
               chmod +x kubectl
@@ -99,17 +114,20 @@ EOF
 
               kubectl version --client
 
+              echo "Configuring AWS CLI..."
               aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID
               aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY
               aws configure set region $AWS_REGION
 
+              echo "Updating kubeconfig for EKS cluster..."
               aws eks --region $AWS_REGION update-kubeconfig --name $EKS_CLUSTER
 
               echo "Updating the EKS deployment container image..."
               kubectl set image deployment/$DEPLOYMENT_NAME \
-                $CONTAINER_NAME=$DOCKER_REGISTRY/$DOCKER_REPO:${BUILD_NUMBER} \
+                $CONTAINER_NAME=${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/$ECR_REPO:$IMAGE_TAG \
                 --namespace $KUBE_NAMESPACE
 
+              echo "Waiting for rollout to complete..."
               kubectl rollout status deployment/$DEPLOYMENT_NAME -n $KUBE_NAMESPACE
             '''
           }
